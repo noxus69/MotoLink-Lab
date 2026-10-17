@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101b26">
+  <meta name="description" content="MotoLink: intercomunicador WebRTC experimental gratuito para 2 a 5 motociclistas.">
+  <title>MotoLink · Intercomunicador</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c141d;--card:#142331;--line:#293a48;--muted:#a1b1bd;--text:#f0f7fb;--accent:#7fe2c1;--accent2:#1f4b46;--danger:#ff8f95;--radius:20px;font-family:system-ui,-apple-system,Roboto,"Segoe UI",sans-serif}
+    *{box-sizing:border-box} html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}
+    body{background:radial-gradient(circle at 50% -9%,#203d49 0,#0c141d 53%);-webkit-tap-highlight-color:transparent}
+    .app{max-width:520px;margin:auto;padding:calc(17px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));min-height:100svh;display:flex;flex-direction:column;gap:16px}
+    .brand{display:flex;align-items:center;gap:11px}.logo{width:45px;height:45px;display:grid;place-items:center;background:var(--accent);color:#0b2120;border-radius:15px}
+    .brand-text b{display:block;font-size:19px;letter-spacing:-.5px}.brand-text small{display:block;color:var(--muted);font-size:11px;letter-spacing:.6px;text-transform:uppercase;margin-top:1px}
+    .pill{margin-left:auto;display:flex;align-items:center;gap:7px;background:#1c313b;border:1px solid #304b50;color:#c4e8da;padding:8px 10px;border-radius:30px;font-size:12px;font-weight:650;white-space:nowrap}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+    h1{font-size:31px;font-weight:760;line-height:1.11;letter-spacing:-1.15px;margin:0}p{margin:0;color:var(--muted);line-height:1.55;font-size:14px}
+    .intro{padding-top:12px;display:grid;gap:11px}.eyebrow{font-size:11px;letter-spacing:2px;font-weight:750;color:var(--accent)}
+    .graphic{border:1px solid #264451;background:linear-gradient(145deg,#172e38,#10212c);min-height:134px;border-radius:21px;display:flex;align-items:center;justify-content:center;gap:19px;margin-top:6px}
+    .helm{height:76px;width:76px;border-radius:50%;background:#284752;display:grid;place-items:center;border:1px solid #456470}
+    .helm:nth-child(3){background:#22473f;border-color:#417666}.wave{color:var(--accent);font-size:28px;letter-spacing:-5px;margin-left:-5px}
+    .pane{display:grid;gap:15px}.field{display:grid;gap:7px}.field label{font-size:13px;font-weight:700;color:#d9e6ec}
+    input{border:1px solid var(--line);background:#172633;color:var(--text);width:100%;height:54px;border-radius:14px;padding:0 15px;font-size:17px;outline:none}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #7fe2c122}input::placeholder{color:#788f9c}#roomInput{text-transform:uppercase;letter-spacing:4px;font-weight:780;font-variant-numeric:tabular-nums}
+    .btn{min-height:54px;border:0;border-radius:15px;padding:12px 17px;font-size:16px;font-weight:780;cursor:pointer;background:var(--accent);color:#08231b;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;touch-action:manipulation}
+    .btn:disabled{opacity:.43;cursor:default}.btn.secondary{background:#213340;border:1px solid #334959;color:var(--text)}.btn.tertiary{background:transparent;color:var(--muted);border:1px solid var(--line)}
+    .split{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;color:#657e8a;font-size:11px;letter-spacing:1px}.split:before,.split:after{content:"";height:1px;background:var(--line)}
+    .tips{font-size:12px;line-height:1.55;color:var(--muted);display:flex;gap:9px;padding:10px 1px}.tips svg{flex:none;margin-top:2px}
+    .permission-panel{display:grid;grid-template-columns:1fr auto;align-items:center;gap:11px;padding:13px;border:1px solid #35505d;border-radius:15px;background:#162a35}
+    .permission-panel strong{font-size:13px;display:block;line-height:1.3}.permission-panel p{font-size:11px;line-height:1.4;margin-top:3px}
+    .permission-panel[data-state="granted"]{border-color:#366356;background:#162d2b}.permission-panel[data-state="granted"] strong{color:#aef4d7}
+    .permission-panel[data-state="error"]{border-color:#8a5157;background:#2b252d}
+    .permission-panel[data-state="error"] strong{color:#ffd5d6}
+    .permission-btn{font-size:12px;font-weight:780;color:#0b2720;border:0;border-radius:11px;padding:12px 11px;background:var(--accent);min-height:43px;max-width:138px;cursor:pointer;touch-action:manipulation}
+    .permission-btn:disabled{opacity:.55;cursor:default}
+    @media(max-width:345px){.permission-panel{grid-template-columns:1fr}.permission-btn{max-width:none;width:100%}}
+    .hidden{display:none!important}.room-head{padding:7px 0 0;display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+    .room-code{font-size:32px;font-weight:800;letter-spacing:3px;font-variant-numeric:tabular-nums;color:var(--text);margin-top:4px}
+    .room-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1.2px;font-weight:740}
+    .copy-btn{border-radius:13px;background:#213441;color:var(--accent);border:1px solid #33534e;font-weight:740;padding:12px 15px;min-height:44px;font-size:14px;cursor:pointer}
+    .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-size:14px;font-weight:760}.section-title small{color:var(--muted);font-size:12px;font-weight:500}
+    .members{display:grid;gap:9px}.member{min-height:55px;display:flex;gap:12px;align-items:center;padding:10px 13px;border-radius:14px;border:1px solid var(--line);background:#13232f}
+    .avatar{height:39px;width:39px;display:grid;place-items:center;background:#2d4d58;color:#d5f7e9;border-radius:50%;font-weight:750;flex:none}
+    .member-main{min-width:0;flex:1}.member-main strong{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.member-main small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.sound-state{font-size:12px;color:#9db5c1;white-space:nowrap}.sound-state.active{color:var(--accent)}
+    .mic-area{padding:7px 0 0;display:flex;align-items:center;flex-direction:column;gap:6px}
+    .mic-halo{width:min(40vw,146px);height:min(40vw,146px);max-height:146px;border:1px solid #3b7064;border-radius:50%;padding:12px;box-shadow:0 0 0 8px #7fe2c108;display:grid;place-items:center}
+    .mic-button{border:0;width:100%;height:100%;background:var(--accent);color:#0c2422;border-radius:50%;display:grid;place-items:center;cursor:pointer;transition:background .15s,transform .15s}
+    .mic-button:active{transform:scale(.97)}.mic-button.muted{background:#394653;color:#f0f5f6}
+    .mic-label{font-weight:760;font-size:17px;margin-top:3px}.mic-hint{font-size:12px;text-align:center;color:var(--muted)}
+    .bottom{margin-top:auto;display:grid;gap:11px}.notice{color:#aec4d0;background:#1a2d3a;border:1px solid #2e4754;border-radius:12px;padding:11px 12px;font-size:12px;line-height:1.5}
+    .notice.error{border-color:#79515b;background:#33232b;color:#ffd1d4}.notice.success{border-color:#376657;background:#17372f;color:#c2f4dd}
+    .debug{font-size:11px;color:#768f9e;text-align:center;line-height:1.45}.control-row{display:flex;gap:10px}.control-row .btn{min-height:48px;font-size:14px}
+    .screen{display:flex;flex-direction:column;gap:13px;flex:1}
+    .volume{display:grid;gap:8px;padding:10px 13px;background:#152733;border:1px solid #2b4852;border-radius:15px}
+    .volume-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;font-weight:700}
+    .volume-head output{color:var(--accent);font-variant-numeric:tabular-nums}
+    .volume input[type=range]{width:100%;height:29px;accent-color:var(--accent);padding:0;background:transparent;border:0;box-shadow:none;touch-action:pan-x}
+    .volume p{font-size:11px;line-height:1.4}
+    .net-state{font-size:12px;font-weight:650;color:var(--accent);text-align:center}
+    .net-state.warning{color:#ffd1a4}.spin{width:18px;height:18px;border-radius:50%;border:2px solid #093b33;border-right-color:transparent;animation:spin .75s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+    svg{display:block}
+    @media(max-height:700px){.app{gap:14px}.screen{gap:14px}.intro{padding-top:0}.graphic{min-height:95px}.helm{height:60px;width:60px}.mic-area{padding:4px 0}.mic-halo{width:124px;height:124px}.room-code{font-size:27px}}
+    @media(prefers-reduced-motion:reduce){.spin{animation:none}}
+  </style>
+</head>
+<body>
+<main class="app">
+  <header class="brand">
+    <span class="logo" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12a7 7 0 0 1 14 0v2h-4a3 3 0 0 1-3-3v-1"/><path d="M5 12v5a2 2 0 0 0 2 2h9a3 3 0 0 0 3-3"/><path d="M7 15h3"/></svg></span>
+    <span class="brand-text"><b>MotoLink</b><small>Intercomunicador</small></span>
+    <span class="pill"><span class="dot"></span><span id="pillText">Prototipo v0.3</span></span>
+  </header>
+
+  <section class="screen" id="homeScreen">
+    <div class="intro"><span class="eyebrow">CONECTA TU GRUPO</span><h1>Tu ruta.<br>Siempre en contacto.</h1><p>Conversa por Internet con otros motociclistas en tiempo real, sin equipos especiales.</p>
+      <div class="graphic" aria-hidden="true">
+        <div class="helm"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#d6e9e9" stroke-width="2.5" stroke-linecap="round"><path d="M9 23a15 15 0 0 1 30 0v5H29a7 7 0 0 1-7-7v-3"/><path d="M9 23v11a5 5 0 0 0 5 5h17a7 7 0 0 0 8-7"/><path d="M12 28h8"/></svg></div>
+        <span class="wave">)))</span>
+        <div class="helm"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#b6f4df" stroke-width="2.5" stroke-linecap="round"><path d="M9 23a15 15 0 0 1 30 0v5H29a7 7 0 0 1-7-7v-3"/><path d="M9 23v11a5 5 0 0 0 5 5h17a7 7 0 0 0 8-7"/><path d="M12 28h8"/></svg></div>
+      </div>
+    </div>
+    <div class="pane">
+      <div id="permissionPanel" class="permission-panel" data-state="pending">
+        <div><strong id="permissionTitle">Micrófono sin comprobar</strong><p id="permissionMessage" role="status" aria-live="polite">Pulsa Permitir para que Chrome solicite acceso.</p></div>
+        <button id="permissionButton" class="permission-btn" type="button">Permitir micrófono</button>
+      </div>
+      <div class="field"><label for="nameInput">Tu nombre</label><input id="nameInput" autocomplete="nickname" maxlength="18" placeholder="Ej. Franklin" value="Motociclista"></div>
+      <button id="createButton" class="btn" type="button">Crear una sala <span aria-hidden="true">→</span></button>
+      <div class="split">O UNIRTE A UNA SALA</div>
+      <div class="field"><label for="roomInput">Código de invitación</label><input id="roomInput" maxlength="8" placeholder="8 CARACTERES" autocapitalize="characters" autocomplete="off" spellcheck="false"></div>
+      <button id="joinButton" class="btn secondary" type="button" disabled>Unirme a la conversación</button>
+    </div>
+    <div class="bottom"><div id="homeNotice" class="notice hidden" role="status" aria-live="polite"></div><div class="tips"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7fe2c1" stroke-width="1.8" stroke-linecap="round"><path d="M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba con 2–5 teléfonos. Requiere Internet y acceso al micrófono. Solo para pruebas detenidos, no durante la conducción.</span></div></div>
+  </section>
+
+  <section class="screen hidden" id="roomScreen">
+    <div class="room-head">
+      <div><div class="room-label">Código de tu sala</div><div class="room-code" id="displayCode">••••••••</div><p>Comparte el código con tu grupo.</p></div>
+      <button id="shareButton" class="copy-btn" type="button">Compartir</button>
+    </div>
+    <div>
+      <div class="section-title"><span>Participantes</span><small id="countLabel">1 de 5</small></div>
+      <div class="members" id="membersList"></div>
+    </div>
+    <div class="mic-area"><div class="mic-halo"><button id="muteButton" class="mic-button" type="button" aria-label="Silenciar micrófono">
+      <svg id="micIcon" width="55" height="55" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+    </button></div><div class="mic-label" id="micLabel">Micrófono encendido</div><div class="mic-hint">Toca el círculo para silenciar o activar</div></div>
+    <div class="volume" aria-label="Control de volumen recibido">
+      <div class="volume-head"><label for="volumeSlider">Volumen de los compañeros</label><output id="volumeValue" for="volumeSlider">170%</output></div>
+      <input id="volumeSlider" type="range" min="100" max="220" step="10" value="170" aria-label="Amplificación del audio recibido">
+      <p>Amplificación digital con control de picos. Ajusta también el volumen multimedia del teléfono y los auriculares.</p>
+    </div>
+    <div class="net-state" id="netState" role="status" aria-live="polite">Esperando participantes</div>
+    <div class="bottom">
+      <div id="roomNotice" class="notice" role="status" aria-live="polite">Esperando a otros participantes...</div>
+      <button id="soundButton" class="btn secondary hidden" type="button">Activar sonido</button>
+      <div class="control-row"><button id="retryButton" class="btn secondary" type="button">Reconectar</button><button id="leaveButton" class="btn tertiary" type="button">Salir de la sala</button></div>
+      <p class="debug">Prueba experimental: el navegador puede detener la llamada al bloquear la pantalla. Sin garantía de conexión en todas las redes móviles.</p>
+    </div>
+  </section>
+  <div id="remoteAudioContainer" class="hidden" aria-hidden="true"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const MAX = 5;
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const ROOM_PREFIX = 'motolink-demo-2026-';
+  const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' },{ urls:'stun:stun1.l.google.com:19302' }] };
+  const icons = {
+    on: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
+    off:'<path d="m2 2 20 20M9 9v2a3 3 0 0 0 5.1 2.1M15 9V5a3 3 0 0 0-5.7-1.3M5 10a7 7 0 0 0 12.2 4.7M19 10a7 7 0 0 1-.8 3.3M12 17v5M8 22h8"/>'
+  };
+  const state = { peer:null,stream:null,code:'',name:'',id:'',isHost:false,active:false,connecting:false,muted:false,members:[],clients:new Map(),hostConn:null,calls:new Map(),audio:new Map(),remoteReady:new Set(),generation:0,
+    audioContext:null,volumeGain:null,compressor:null,audioNodes:new Map(),volume:1.7,
+    callTimers:new Map(),disconnectedTimers:new Map(),routeTimer:null,hostRetry:null,signalTries:0, recovering:false };
+  let joinTimeout = null, reconnectTimeout = null;
+  let permissionPending = false;
+  let permissionHandle = null;
+  const RETRY_EVERY = 7000;
+  function setNetStatus(){
+    if(!state.active)return;
+    const desired=Math.max(0,state.members.length-1),good=Array.from(state.remoteReady).filter(id=>state.members.some(m=>m.id===id)).length;
+    const warning=(!navigator.onLine || state.peer?.disconnected || good<desired);
+    const line=!navigator.onLine?'Sin Internet · intentando recuperar':state.peer?.disconnected?'Reconectando señalización…':!desired?'Esperando compañeros':good===desired?'Audio conectado · '+good+' de '+desired:good+' de '+desired+' audios · reconectando';
+    $('netState').textContent=line;
+    $('netState').classList.toggle('warning',warning);
+  }
+  function setVolume(pct){
+    const clean=Math.max(100,Math.min(220,Number(pct)||170));
+    state.volume=clean/100;
+    $('volumeSlider').value=String(clean);
+    $('volumeValue').textContent=clean+'%';
+    if(state.volumeGain && state.audioContext){
+      state.volumeGain.gain.setTargetAtTime(state.volume,state.audioContext.currentTime,.035);
+    }
+    try{localStorage.setItem('motolink-volume',String(clean));}catch{}
+  }
+  function prepareAudio(){
+    if(state.audioContext)return state.audioContext.resume().catch(()=>{});
+    const Ctx=window.AudioContext||window.webkitAudioContext;
+    if(!Ctx)return Promise.resolve();
+    try{
+      const ctx=new Ctx(),gain=ctx.createGain(),comp=ctx.createDynamicsCompressor();
+      comp.threshold.value=-18; comp.knee.value=7; comp.ratio.value=12;
+      comp.attack.value=.003; comp.release.value=.18;
+      gain.gain.value=state.volume;
+      gain.connect(comp);comp.connect(ctx.destination);
+      state.audioContext=ctx;state.volumeGain=gain;state.compressor=comp;
+      return ctx.resume().catch(()=>{});
+    }catch{return Promise.resolve();}
+  }
+  function shouldDial(id){return !!(id && state.id && state.id<id);}
+  function cancelCallTimer(id){
+    if(state.callTimers.has(id))clearTimeout(state.callTimers.get(id));
+    state.callTimers.delete(id);
+    if(state.disconnectedTimers.has(id))clearTimeout(state.disconnectedTimers.get(id));
+    state.disconnectedTimers.delete(id);
+  }
+  function ensureRoutes(){
+    if(!state.active||!navigator.onLine||state.peer?.disconnected||state.peer?.destroyed)return;
+    for(const m of state.members){if(m.id!==state.id && shouldDial(m.id) && !state.calls.has(m.id))callMember(m.id);}
+    setNetStatus();
+  }
+  function scheduleHostRetry(){
+    if(state.isHost||!state.active||state.hostRetry||!navigator.onLine)return;
+    const gen=state.generation;
+    state.hostRetry=setTimeout(()=>{
+      state.hostRetry=null;
+      if(gen===state.generation && state.active && state.peer && !state.peer.disconnected && !state.hostConn?.open)connectToHost();
+    },4000);
+    setNetStatus();
+  }
+  function scheduleSignalReconnect(peer,gen){
+    if(reconnectTimeout)clearTimeout(reconnectTimeout);
+    if(gen!==state.generation||peer.destroyed||!peer.disconnected)return;
+    reconnectTimeout=setTimeout(()=>{
+      reconnectTimeout=null;
+      if(gen!==state.generation||peer.destroyed||!peer.disconnected)return;
+      try{peer.reconnect();}catch{}
+      if(peer.disconnected){state.signalTries++;scheduleSignalReconnect(peer,gen);}
+    },Math.min(15000,1500*Math.pow(1.7,Math.min(state.signalTries,5))));
+  }
+
+
+  function note(message, isError=false, target='home') {
+    const el = $(target === 'home' ? 'homeNotice' : 'roomNotice');
+    el.textContent = message;
+    el.classList.remove('hidden','error','success');
+    if (isError) el.classList.add('error');
+  }
+  function setBusy(value) {
+    state.connecting = value;
+    $('permissionButton').disabled = value || permissionPending;
+    $('createButton').disabled = value || permissionPending;
+    $('joinButton').disabled = value || permissionPending || $('roomInput').value.length!==8;
+    $('createButton').innerHTML = value ? '<span class="spin"></span> Conectando...' : 'Crear una sala <span aria-hidden="true">→</span>';
+  }
+  function scrubCode(s) { return s.toUpperCase().replace(/[^A-Z2-9]/g,'').replace(/[IO10]/g,'').slice(0,8); }
+  function generateCode() {
+    const values = crypto.getRandomValues(new Uint8Array(8));
+    return Array.from(values, v => ALPHABET[v % ALPHABET.length]).join('');
+  }
+  function peerOptions() { return {config: ICE,debug:0}; }
+  function hostId(code) { return ROOM_PREFIX + code.toLowerCase(); }
+  function canRun() {
+    if(typeof Peer !== 'function'){note('No se pudo cargar PeerJS. Comprueba tu conexión a Internet.',true);return false;}
+    if(!micContextOK()){note('El micrófono requiere un contexto seguro: HTTPS o un archivo local compatible.',true);return false;}
+    if(!window.RTCPeerConnection){note('Este navegador no admite WebRTC.',true);return false;}
+    return true;
+  }
+  function normalizeName(s){return (s||'Motociclista').trim().slice(0,18)||'Motociclista';}
+  function setPermissionUI(status, message){
+    const panel=$('permissionPanel');
+    panel.dataset.state=status;
+    $('permissionTitle').textContent=status==='granted'?'Micrófono autorizado':status==='error'?'Revisar acceso al micrófono':status==='checking'?'Comprobando micrófono…':'Permiso del micrófono';
+    $('permissionMessage').textContent=message;
+    $('permissionButton').classList.toggle('hidden',status==='granted');
+    $('permissionButton').textContent=status==='checking'?'Solicitando…':status==='error'?'Reintentar':'Permitir micrófono';
+    $('permissionButton').disabled=permissionPending||state.connecting;
+  }
+  function micErrorText(err){
+    if(err?.name==='NotAllowedError'||err?.name==='PermissionDeniedError'||err?.name==='SecurityError')return 'Permiso bloqueado o rechazado. Abre los permisos de este sitio en Chrome y selecciona Micrófono → Permitir; luego pulsa Reintentar.';
+    if(err?.name==='NotFoundError'||err?.name==='DevicesNotFoundError')return 'No se detectó un micrófono disponible. Revisa los dispositivos de audio.';
+    if(err?.name==='NotReadableError'||err?.name==='TrackStartError')return 'El micrófono está ocupado o Android no puede utilizarlo. Cierra otras apps de audio y reintenta.';
+    if(err?.name==='OverconstrainedError')return 'El dispositivo no acepta la configuración de audio solicitada.';
+    return 'No se pudo acceder al micrófono. Verifica los permisos de Chrome y vuelve a intentarlo.';
+  }
+  function micContextOK(){
+    if(window.isSecureContext && navigator.mediaDevices?.getUserMedia) return true;
+    setPermissionUI('error','Este navegador no permite solicitar el micrófono en esta dirección. Abre MotoLink en HTTPS o directamente en Chrome si el archivo local es compatible.');
+    return false;
+  }
+  async function requestMicPermission(){
+    if(permissionPending||state.connecting||state.active)return;
+    if(!micContextOK())return;
+    permissionPending=true;
+    setPermissionUI('checking','Chrome mostrará la solicitud de permiso. Selecciona Permitir.');
+    setBusy(false);
+    try{
+      const trial=await captureAudio();
+      try{trial.getTracks().forEach(track=>track.stop());}catch{}
+      setPermissionUI('granted','Acceso concedido. Puedes crear una sala o unirte a una conversación.');
+    }catch(err){
+      setPermissionUI('error',micErrorText(err));
+    }finally{
+      permissionPending=false;
+      setBusy(false);
+      $('permissionButton').disabled=false;
+    }
+  }
+  async function watchMicPermission(){
+    if(!window.isSecureContext||!navigator.permissions?.query)return;
+    try{
+      permissionHandle=await navigator.permissions.query({name:'microphone'});
+      if(permissionHandle.state==='granted')setPermissionUI('granted','Permiso concedido anteriormente. Puedes crear una sala o unirte.');
+      else if(permissionHandle.state==='denied')setPermissionUI('error',micErrorText({name:'NotAllowedError'}));
+      permissionHandle.onchange=()=>{
+        if(permissionPending||state.connecting||state.active)return;
+        if(permissionHandle.state==='granted')setPermissionUI('granted','El micrófono está autorizado.');
+        else if(permissionHandle.state==='denied')setPermissionUI('error',micErrorText({name:'NotAllowedError'}));
+        else setPermissionUI('pending','Pulsa Permitir para que Chrome solicite acceso.');
+      };
+    }catch{ /* Algunos navegadores no exponen el estado: el botón sigue funcionando. */ }
+  }
+  async function captureAudio(){
+    return navigator.mediaDevices.getUserMedia({ video:false,audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1} });
+  }
+  async function start(kind){
+    if(state.connecting || permissionPending || state.active || !canRun()) return;
+    // Activar el contexto desde el gesto del usuario evita el bloqueo por reproducción automática.
+    prepareAudio();
+    state.name = normalizeName($('nameInput').value);
+    state.code = kind==='create' ? generateCode() : scrubCode($('roomInput').value);
+    if(state.code.length!==8){note('Introduce un código válido de 8 caracteres.',true);return;}
+    state.isHost = kind==='create';
+    setBusy(true);note('Solicitando acceso al micrófono...');
+    const generation = ++state.generation;
+    try{
+      state.stream=await captureAudio();
+      setPermissionUI('granted','Micrófono disponible para la conversación.');
+      if(generation!==state.generation){state.stream.getTracks().forEach(t=>t.stop());return;}
+      note('Conectando con el servicio gratuito...');
+      state.peer = state.isHost ? new Peer(hostId(state.code),peerOptions()) : new Peer(undefined,peerOptions());
+      attachPeerHandlers(state.peer,generation);
+    }catch(err){
+      const message=micErrorText(err);
+      setPermissionUI('error',message);
+      cleanup();
+      note(message,true);
+    }
+  }
+  function attachPeerHandlers(peer,gen){
+    peer.on('open', (id)=>{
+      if(gen!==state.generation)return;
+      state.id=id;
+      state.signalTries=0;
+      if(reconnectTimeout)clearTimeout(reconnectTimeout);reconnectTimeout=null;
+      if(!state.active){if(state.isHost){state.members=[{id,name:state.name}];enterRoom();}else connectToHost();}
+      else {if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();ensureRoutes();setNetStatus();}
+    });
+    peer.on('connection', (conn)=>{if(gen!==state.generation)return;if(state.isHost)hostAcceptData(conn);else conn.close();});
+    peer.on('call',(call)=>{
+      if(gen!==state.generation)return;
+      if(state.isHost && !state.clients.has(call.peer)){call.close();return;}
+      if(!state.isHost && !state.members.some(m=>m.id===call.peer)){
+        let attempts=0;
+        const wait=setInterval(()=>{
+          attempts++;
+          if(gen!==state.generation || state.members.some(m=>m.id===call.peer)){
+            clearInterval(wait);
+            if(gen===state.generation)acceptCall(call);else call.close();
+          }else if(attempts>14){clearInterval(wait);call.close();}
+        },200);
+        return;
+      }
+      acceptCall(call);
+    });
+    peer.on('disconnected',()=>{
+      if(gen!==state.generation)return;
+      if(state.active)note('Se perdió la señalización. MotoLink intentará recuperar la conexión.',true,'room');
+      scheduleSignalReconnect(peer,gen);setNetStatus();
+    });
+    peer.on('error',(err)=>{
+      if(gen!==state.generation)return;
+      const type=err?.type||'error';
+      if(type==='unavailable-id'){cleanup();note('Esa sala ya existe. Crea una nueva o ingresa el código de la sala existente.',true);return;}
+      if(type==='peer-unavailable' && !state.active){cleanup();note('No se encontró la sala. Revisa el código y confirma que el creador siga conectado.',true);return;}
+      if(type==='peer-unavailable' && state.active){note('Un participante no responde; se intentará reconectar.',true,'room');setNetStatus();return;}
+      if(['server-error','socket-error','network','browser-incompatible','invalid-id'].includes(type) && !state.active){cleanup();note('No se pudo conectar con la señalización gratuita: '+type,true);return;}
+      if(state.active){note('Problema de conexión ('+type+'). Comprueba Internet.',true,'room');if(peer.disconnected)scheduleSignalReconnect(peer,gen);setNetStatus();}
+    });
+  }
+  function connectToHost(){
+    const generation=state.generation;
+    if(!state.peer || state.peer.destroyed || state.peer.disconnected || state.hostConn?.open)return;
+    const previous=state.hostConn;
+    if(previous)try{previous.close();}catch{}
+    const conn=state.peer.connect(hostId(state.code),{serialization:'json',reliable:true});
+    if(!conn){cleanup();note('No se pudo localizar la sala.',true);return;}
+    state.hostConn=conn;
+    if(joinTimeout)clearTimeout(joinTimeout);
+    joinTimeout=setTimeout(()=>{
+      if(generation!==state.generation||state.hostConn!==conn)return;
+      if(!state.active){cleanup();note('La sala no respondió. Verifica el código o intenta otra vez.',true);}
+      else {try{conn.close();}catch{}state.hostConn=null;scheduleHostRetry();}
+    },13000);
+    conn.on('open',()=>{if(generation===state.generation && state.peer && !state.peer.destroyed)conn.send({type:'join',name:state.name});});
+    conn.on('data',(data)=>{
+      if(generation!==state.generation || !data||typeof data!=='object')return;
+      if(data.type==='rejected'){cleanup();note(data.reason||'No puedes unirte a esta sala.',true);}
+      else if(data.type==='welcome'){
+        state.members=sanitizeRoster(data.members);
+        if(joinTimeout)clearTimeout(joinTimeout);
+        if(!state.active)enterRoom();
+        ensureRoutes();setNetStatus();
+      }else if(data.type==='roster'){
+        state.members=sanitizeRoster(data.members);
+        pruneCalls();renderMembers();ensureRoutes();
+      }
+    });
+    conn.on('close',()=>{
+      if(generation!==state.generation||state.hostConn!==conn)return;
+      state.hostConn=null;
+      if(joinTimeout)clearTimeout(joinTimeout);
+      if(!state.active){cleanup();note('No se pudo establecer la conexión con la sala.',true);}
+      else {note('Conexión de sala perdida; recuperando automáticamente…',true,'room');scheduleHostRetry();}
+    });
+    conn.on('error',()=>{
+      if(generation!==state.generation||state.hostConn!==conn)return;
+      if(!state.active){cleanup();note('No se pudo contactar con el creador de la sala.',true);}
+      else {try{conn.close();}catch{}state.hostConn=null;note('Reconectando con la sala…',true,'room');scheduleHostRetry();}
+    });
+  }
+  function sanitizeRoster(items){
+    if(!Array.isArray(items))return [];
+    return items.slice(0,MAX).filter(m=>m&&typeof m.id==='string'&&typeof m.name==='string').map(m=>({id:m.id.slice(0,160),name:m.name.slice(0,18)}));
+  }
+  function hostAcceptData(conn){
+    const generation=state.generation;
+    let registered=false;
+    conn.on('data',(data)=>{
+      if(generation!==state.generation||registered||data?.type!=='join')return;
+      if(state.clients.size>=MAX-1){conn.send({type:'rejected',reason:'La sala está llena (máximo 5 personas).'});setTimeout(()=>conn.close(),600);return;}
+      registered=true;
+      const old=state.clients.get(conn.peer);
+      state.clients.set(conn.peer,{conn,name:normalizeName(data.name)});
+      if(old && old.conn!==conn)try{old.conn.close();}catch{}
+      state.members=[{id:state.id,name:state.name},...Array.from(state.clients,([id,item])=>({id,name:item.name}))];
+      conn.send({type:'welcome',members:state.members});
+      broadcastRoster();renderMembers();ensureRoutes();
+      note('Participante conectado. Estableciendo audio P2P... ',false,'room');
+    });
+    conn.on('close',()=>{
+      if(generation!==state.generation||!registered||state.clients.get(conn.peer)?.conn!==conn)return;
+      state.clients.delete(conn.peer);
+      state.members=[{id:state.id,name:state.name},...Array.from(state.clients,([id,item])=>({id,name:item.name}))];
+      closeCall(conn.peer);broadcastRoster();renderMembers();
+    });
+    conn.on('error',()=>{if(generation===state.generation && registered && state.clients.get(conn.peer)?.conn===conn){state.clients.delete(conn.peer);state.members=[{id:state.id,name:state.name},...Array.from(state.clients,([id,item])=>({id,name:item.name}))];closeCall(conn.peer);broadcastRoster();renderMembers();}});
+  }
+  function broadcastRoster(){for(const item of state.clients.values())if(item.conn.open)try{item.conn.send({type:'roster',members:state.members});}catch{}}
+  function enterRoom(){
+    state.active=true;state.connecting=false;
+    if(state.routeTimer)clearInterval(state.routeTimer);
+    state.routeTimer=setInterval(()=>{ensureRoutes();if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();},RETRY_EVERY);
+    setBusy(false);
+    $('homeScreen').classList.add('hidden');$('roomScreen').classList.remove('hidden');
+    $('displayCode').textContent=state.code;
+    $('pillText').textContent='Sala activa';
+    note('Micrófono activo. Comparte el código para que entren más motociclistas.',false,'room');
+    renderMembers();renderMic();setNetStatus();ensureRoutes();
+    try{localStorage.setItem('motolink-name',state.name);}catch{}
+  }
+  function acceptCall(call){
+    if(!state.stream||!state.active||state.calls.has(call.peer)){call.close();return;}
+    registerCall(call);
+    try{call.answer(state.stream);}catch{closeCall(call.peer);}
+  }
+  function callMember(id){
+    if(!state.active||!id||id===state.id||state.calls.has(id)||!state.stream||!state.peer||!shouldDial(id)||state.peer.disconnected)return;
+    try{
+      const call=state.peer.call(id,state.stream,{metadata:{name:state.name}});
+      if(call)registerCall(call);
+    }catch{note('No se pudo iniciar audio con un participante.',true,'room');}
+  }
+  function registerCall(call){
+    const id=call.peer;
+    if(state.calls.has(id)){call.close();return;}
+    state.calls.set(id,call);
+    cancelCallTimer(id);
+    state.callTimers.set(id,setTimeout(()=>{
+      if(state.calls.get(id)===call && !state.remoteReady.has(id)){
+        note('Audio sin respuesta; reconectando…',true,'room');clearCall(id,true);renderMembers();ensureRoutes();
+      }
+    },16000));
+    call.on('stream',stream=>{
+      if(state.calls.get(id)!==call)return;
+      cancelCallTimer(id);mountAudio(id,stream);state.remoteReady.add(id);
+      renderMembers();setNetStatus();note('Audio conectado. La conversación está activa.',false,'room');
+    });
+    call.on('close',()=>{if(state.calls.get(id)===call){clearCall(id,false);renderMembers();setTimeout(ensureRoutes,1200);}});
+    call.on('error',()=>{if(state.calls.get(id)===call){clearCall(id,true);renderMembers();note('Audio interrumpido; reconectando…',true,'room');setTimeout(ensureRoutes,2000);}});
+    const pc=call.peerConnection;
+    if(pc){pc.addEventListener('iceconnectionstatechange',()=>{
+      if(state.calls.get(id)!==call)return;
+      const status=pc.iceConnectionState;
+      if(status==='failed'){
+        note('Conexión P2P fallida. Reintentando; algunas redes requieren TURN.',true,'room');
+        clearCall(id,true);renderMembers();setTimeout(ensureRoutes,1800);
+      }else if(status==='disconnected'){
+        if(state.disconnectedTimers.has(id))clearTimeout(state.disconnectedTimers.get(id));
+        state.disconnectedTimers.set(id,setTimeout(()=>{
+          if(state.calls.get(id)===call && pc.iceConnectionState==='disconnected'){
+            clearCall(id,true);renderMembers();setTimeout(ensureRoutes,1800);
+          }
+        },8000));
+      }else if(status==='connected'||status==='completed'){
+        if(state.disconnectedTimers.has(id))clearTimeout(state.disconnectedTimers.get(id));
+        state.disconnectedTimers.delete(id);
+      }
+      setNetStatus();
+    });}
+    renderMembers();
+  }
+  function mountAudio(id,stream){
+    let audio=state.audio.get(id);
+    if(!audio){audio=document.createElement('audio');audio.autoplay=true;audio.playsInline=true;audio.setAttribute('playsinline','');audio.id='audio-'+id.replace(/[^a-zA-Z0-9_-]/g,'');$('remoteAudioContainer').appendChild(audio);state.audio.set(id,audio);}
+    audio.srcObject=stream;
+    if(state.audioContext && !state.audioNodes.has(id)){
+      try{
+        const node=state.audioContext.createMediaElementSource(audio);
+        node.connect(state.volumeGain);
+        state.audioNodes.set(id,node);
+      }catch{ /* Reproducción HTMLAudioElement como alternativa si Web Audio falla. */ }
+    }
+    prepareAudio();
+    audio.play().then(()=>{if(state.active)$('soundButton').classList.add('hidden');}).catch(()=>{$('soundButton').classList.remove('hidden');note('Pulsa «Activar sonido» para escuchar a los demás.',true,'room');});
+  }
+  function clearCall(id,shouldClose){
+    cancelCallTimer(id);
+    const call=state.calls.get(id);state.calls.delete(id);state.remoteReady.delete(id);
+    if(shouldClose && call)try{call.close();}catch{}
+    const node=state.audioNodes.get(id);if(node){try{node.disconnect();}catch{}state.audioNodes.delete(id);}
+    const audio=state.audio.get(id);if(audio){audio.pause();audio.srcObject=null;audio.remove();state.audio.delete(id);}
+    setNetStatus();
+  }
+  function closeCall(id){clearCall(id,true);renderMembers();}
+  function pruneCalls(){const valid=new Set(state.members.map(m=>m.id));for(const id of state.calls.keys())if(!valid.has(id))closeCall(id);}
+  function renderMembers(){
+    if(!state.active)return;
+    const list=$('membersList');list.replaceChildren();
+    for(const member of state.members){
+      const self=member.id===state.id, connected=state.remoteReady.has(member.id);
+      const row=document.createElement('div');row.className='member';
+      const avatar=document.createElement('span');avatar.className='avatar';avatar.textContent=member.name.charAt(0).toUpperCase()||'M';
+      const info=document.createElement('span');info.className='member-main';
+      const heading=document.createElement('strong');heading.textContent=member.name+(self?' (tú)':'');
+      const sub=document.createElement('small');sub.textContent=self?(state.isHost?'Creador de la sala':'Participante'):'Conexión WebRTC';
+      info.append(heading,sub);
+      const status=document.createElement('span');status.className='sound-state'+((connected||self&&!state.muted)?' active':'');
+      status.textContent=self?(state.muted?'Silenciado':'En línea'):(connected?'● Audio':'○ Pendiente');
+      row.append(avatar,info,status);list.appendChild(row);
+    }
+    $('countLabel').textContent=state.members.length+' de '+MAX;
+    setNetStatus();
+  }
+  function renderMic(){
+    const off=state.muted;
+    $('micIcon').innerHTML=off?icons.off:icons.on;
+    $('muteButton').classList.toggle('muted',off);
+    $('muteButton').setAttribute('aria-label',off?'Activar micrófono':'Silenciar micrófono');
+    $('micLabel').textContent=off?'Micrófono silenciado':'Micrófono encendido';
+    renderMembers();
+  }
+  function toggleMic(){if(!state.stream)return;state.muted=!state.muted;for(const track of state.stream.getAudioTracks())track.enabled=!state.muted;renderMic();}
+  function reattemptAudio(){
+    if(!state.active)return;
+    prepareAudio();
+    for(const m of state.members){
+      if(m.id!==state.id&&!state.remoteReady.has(m.id))clearCall(m.id,true);
+    }
+    if(state.peer?.disconnected)scheduleSignalReconnect(state.peer,state.generation);
+    if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();
+    ensureRoutes();activateSound();
+    note('Reintento de conexión iniciado. Puede tardar unos segundos.',false,'room');
+  }
+  async function activateSound(){
+    await prepareAudio();
+    let good=true;
+    for(const audio of state.audio.values())try{await audio.play();}catch{good=false;}
+    if(good)$('soundButton').classList.add('hidden');
+  }
+  async function shareRoom(){
+    if(!state.active)return;
+    let link='';
+    if(location.protocol==='https:'){
+      const url=new URL(location.href);url.searchParams.set('room',state.code);link=url.toString();
+    }
+    const text='Únete a mi sala MotoLink. Código: '+state.code+(link?'\n'+link:'');
+    try{
+      if(navigator.share)await navigator.share({title:'MotoLink',text});
+      else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);note('Invitación copiada. Compártela con tu grupo.',false,'room');}
+      else {const el=document.createElement('textarea');el.value=text;document.body.appendChild(el);el.select();const ok=document.execCommand('copy');el.remove();if(ok)note('Código e invitación copiados.',false,'room');else note('Comparte este código: '+state.code,false,'room');}
+    }catch(err){if(err?.name!=='AbortError')note('Comparte manualmente este código: '+state.code,false,'room');}
+  }
+  function cleanup(){
+    state.generation++;
+    if(joinTimeout)clearTimeout(joinTimeout);joinTimeout=null;
+    if(reconnectTimeout)clearTimeout(reconnectTimeout);reconnectTimeout=null;
+    if(state.hostRetry)clearTimeout(state.hostRetry);state.hostRetry=null;
+    if(state.routeTimer)clearInterval(state.routeTimer);state.routeTimer=null;
+    for(const t of state.callTimers.values())clearTimeout(t);state.callTimers.clear();
+    for(const t of state.disconnectedTimers.values())clearTimeout(t);state.disconnectedTimers.clear();
+    for(const id of Array.from(state.calls.keys()))clearCall(id,true);
+    for(const item of state.clients.values())try{item.conn.close();}catch{}
+    if(state.hostConn)try{state.hostConn.close();}catch{}
+    if(state.peer)try{state.peer.destroy();}catch{}
+    if(state.stream)for(const t of state.stream.getTracks())t.stop();
+    if(state.audioContext)try{state.audioContext.close();}catch{}
+    state.audioContext=null;state.volumeGain=null;state.compressor=null;state.audioNodes.clear();state.signalTries=0;
+    state.peer=null;state.stream=null;state.id='';state.code='';state.isHost=false;state.active=false;state.muted=false;state.members=[];state.hostConn=null;state.calls.clear();state.audio.clear();state.remoteReady.clear();state.clients.clear();
+    $('roomScreen').classList.add('hidden');$('homeScreen').classList.remove('hidden');$('soundButton').classList.add('hidden');$('pillText').textContent='Prototipo v0.3';
+    setBusy(false);
+  }
+
+  $('permissionButton').addEventListener('click',requestMicPermission);
+  $('createButton').addEventListener('click',()=>start('create'));
+  $('joinButton').addEventListener('click',()=>start('join'));
+  $('roomInput').addEventListener('input',e=>{e.target.value=scrubCode(e.target.value);$('joinButton').disabled=state.connecting||permissionPending||e.target.value.length!==8;});
+  $('roomInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!$('joinButton').disabled)start('join');});
+  $('muteButton').addEventListener('click',toggleMic);
+  $('shareButton').addEventListener('click',shareRoom);
+  $('leaveButton').addEventListener('click',()=>{cleanup();note('Has salido de la sala.');});
+  $('retryButton').addEventListener('click',reattemptAudio);
+  $('soundButton').addEventListener('click',activateSound);
+  $('volumeSlider').addEventListener('input',e=>setVolume(e.target.value));
+  window.addEventListener('online',()=>{if(state.active){if(state.peer?.disconnected)scheduleSignalReconnect(state.peer,state.generation);if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();ensureRoutes();}});
+  window.addEventListener('offline',()=>{if(state.active){note('Sin Internet. Al volver la red, MotoLink intentará reconectar.',true,'room');setNetStatus();}});
+  window.addEventListener('pagehide',()=>{if(state.active||state.connecting)cleanup();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.active){renderMembers();}});
+  try{const old=localStorage.getItem('motolink-name');if(old)$('nameInput').value=normalizeName(old);}catch{}
+  try{setVolume(localStorage.getItem('motolink-volume')||170);}catch{setVolume(170);}
+  const queryRoom=new URLSearchParams(location.search).get('room');
+  if(queryRoom){const clean=scrubCode(queryRoom);$('roomInput').value=clean;$('joinButton').disabled=clean.length!==8;}
+  watchMicPermission();
+})();
+</script>
+</body>
+</html>
