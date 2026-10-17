@@ -68,7 +68,7 @@
   <header class="brand">
     <span class="logo" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12a7 7 0 0 1 14 0v2h-4a3 3 0 0 1-3-3v-1"/><path d="M5 12v5a2 2 0 0 0 2 2h9a3 3 0 0 0 3-3"/><path d="M7 15h3"/></svg></span>
     <span class="brand-text"><b>MotoLink</b><small>Intercomunicador</small></span>
-    <span class="pill"><span class="dot"></span><span id="pillText">Prototipo v0.3</span></span>
+    <span class="pill"><span class="dot"></span><span id="pillText">Prototipo v0.4</span></span>
   </header>
 
   <section class="screen" id="homeScreen">
@@ -114,7 +114,7 @@
     <div class="bottom">
       <div id="roomNotice" class="notice" role="status" aria-live="polite">Esperando a otros participantes...</div>
       <button id="soundButton" class="btn secondary hidden" type="button">Activar sonido</button>
-      <div class="control-row"><button id="retryButton" class="btn secondary" type="button">Reconectar</button><button id="leaveButton" class="btn tertiary" type="button">Salir de la sala</button></div>
+      <div class="control-row"><button id="retryButton" class="btn secondary" type="button">Reparar conexión</button><button id="leaveButton" class="btn tertiary" type="button">Salir de la sala</button></div>
       <p class="debug">Prueba experimental: el navegador puede detener la llamada al bloquear la pantalla. Sin garantía de conexión en todas las redes móviles.</p>
     </div>
   </section>
@@ -135,16 +135,21 @@
   };
   const state = { peer:null,stream:null,code:'',name:'',id:'',isHost:false,active:false,connecting:false,muted:false,members:[],clients:new Map(),hostConn:null,calls:new Map(),audio:new Map(),remoteReady:new Set(),generation:0,
     audioContext:null,volumeGain:null,compressor:null,audioNodes:new Map(),volume:1.7,
-    callTimers:new Map(),disconnectedTimers:new Map(),routeTimer:null,hostRetry:null,signalTries:0, recovering:false };
+    callTimers:new Map(),disconnectedTimers:new Map(),routeTimer:null,hostRetry:null,signalTries:0,
+    peerRecoveryTimer:null,peerRecoveryTries:0,peerStartedAt:0,hostLastSeen:0,lastPingAt:0,signalingDownSince:0,
+    mediaStreams:new Set(),iceLostAt:new Map(),callFailures:new Map(),callRetryAfter:new Map() };
   let joinTimeout = null, reconnectTimeout = null;
   let permissionPending = false;
   let permissionHandle = null;
   const RETRY_EVERY = 7000;
   function setNetStatus(){
     if(!state.active)return;
-    const desired=Math.max(0,state.members.length-1),good=Array.from(state.remoteReady).filter(id=>state.members.some(m=>m.id===id)).length;
-    const warning=(!navigator.onLine || state.peer?.disconnected || good<desired);
-    const line=!navigator.onLine?'Sin Internet · intentando recuperar':state.peer?.disconnected?'Reconectando señalización…':!desired?'Esperando compañeros':good===desired?'Audio conectado · '+good+' de '+desired:good+' de '+desired+' audios · reconectando';
+    const desired=Math.max(0,state.members.length-1);
+    const good=Array.from(state.remoteReady).filter(id=>state.members.some(m=>m.id===id)).length;
+    const offline=!navigator.onLine,signaling=!state.peer||state.peer.destroyed||state.peer.disconnected||!!state.signalingDownSince;
+    const hostMissing=!state.isHost && (!state.hostConn || !state.hostConn.open);
+    const warning=offline||signaling||hostMissing||good<desired;
+    const line=offline?'Sin Internet · esperando señal':signaling?'Recuperando conexión principal…':hostMissing?'Reconectando con la sala…':!desired?'Esperando compañeros':good===desired?'Audio conectado · '+good+' de '+desired:'Recuperando audio · '+good+' de '+desired;
     $('netState').textContent=line;
     $('netState').classList.toggle('warning',warning);
   }
@@ -178,10 +183,48 @@
     state.callTimers.delete(id);
     if(state.disconnectedTimers.has(id))clearTimeout(state.disconnectedTimers.get(id));
     state.disconnectedTimers.delete(id);
+    state.iceLostAt.delete(id);
+  }
+  function markCallFailure(id){
+    if(!state.active||!state.members.some(m=>m.id===id))return;
+    const failures=Math.min(6,(state.callFailures.get(id)||0)+1);
+    state.callFailures.set(id,failures);
+    state.callRetryAfter.set(id,Date.now()+Math.min(20000,1500*Math.pow(1.7,failures-1)));
+  }
+  function failCall(id,call){
+    if(state.calls.get(id)!==call)return;
+    markCallFailure(id);
+    clearCall(id,true);
+    renderMembers();setNetStatus();
+  }
+  function inspectCalls(){
+    if(!state.active)return;
+    for(const [id,call] of Array.from(state.calls)){
+      const pc=call.peerConnection;
+      if(!pc)continue;
+      const ice=pc.iceConnectionState;
+      if(ice==='connected'||ice==='completed'){
+        state.iceLostAt.delete(id);
+        if(state.mediaStreams.has(id)){
+          state.remoteReady.add(id);
+          state.callFailures.delete(id);state.callRetryAfter.delete(id);
+        }
+      }else{
+        state.remoteReady.delete(id);
+        if(ice==='failed'||ice==='closed'){failCall(id,call);continue;}
+        if(ice==='disconnected'){
+          if(!state.iceLostAt.has(id))state.iceLostAt.set(id,Date.now());
+          if(Date.now()-state.iceLostAt.get(id)>12000){failCall(id,call);continue;}
+        }
+      }
+    }
+    renderMembers();setNetStatus();
   }
   function ensureRoutes(){
-    if(!state.active||!navigator.onLine||state.peer?.disconnected||state.peer?.destroyed)return;
-    for(const m of state.members){if(m.id!==state.id && shouldDial(m.id) && !state.calls.has(m.id))callMember(m.id);}
+    if(!state.active||!navigator.onLine||!state.peer||state.peer.disconnected||state.peer.destroyed||state.signalingDownSince)return;
+    for(const m of state.members){
+      if(m.id!==state.id && shouldDial(m.id) && !state.calls.has(m.id) && Date.now()>=(state.callRetryAfter.get(m.id)||0))callMember(m.id);
+    }
     setNetStatus();
   }
   function scheduleHostRetry(){
@@ -189,21 +232,78 @@
     const gen=state.generation;
     state.hostRetry=setTimeout(()=>{
       state.hostRetry=null;
-      if(gen===state.generation && state.active && state.peer && !state.peer.disconnected && !state.hostConn?.open)connectToHost();
-    },4000);
+      if(gen===state.generation && state.active && state.peer && !state.peer.disconnected && !state.peer.destroyed && !state.hostConn?.open)connectToHost();
+    },3000);
     setNetStatus();
   }
   function scheduleSignalReconnect(peer,gen){
-    if(reconnectTimeout)clearTimeout(reconnectTimeout);
-    if(gen!==state.generation||peer.destroyed||!peer.disconnected)return;
+    if(reconnectTimeout)return;
+    if(gen!==state.generation||peer!==state.peer||!state.active||!navigator.onLine)return;
+    if(peer.destroyed){schedulePeerRebuild();return;}
+    if(!peer.disconnected)return;
+    if(state.signalTries>=5){schedulePeerRebuild();return;}
+    const delay=Math.min(12000,1500*Math.pow(1.8,state.signalTries));
     reconnectTimeout=setTimeout(()=>{
       reconnectTimeout=null;
-      if(gen!==state.generation||peer.destroyed||!peer.disconnected)return;
-      try{peer.reconnect();}catch{}
-      if(peer.disconnected){state.signalTries++;scheduleSignalReconnect(peer,gen);}
-    },Math.min(15000,1500*Math.pow(1.7,Math.min(state.signalTries,5))));
+      if(gen!==state.generation||peer!==state.peer||!state.active||!navigator.onLine||!peer.disconnected)return;
+      state.signalTries++;
+      try{peer.reconnect();}catch{schedulePeerRebuild();return;}
+      // Si PeerJS no reconecta, no repetir indefinidamente sobre el mismo objeto.
+      scheduleSignalReconnect(peer,gen);
+    },delay);
   }
-
+  function schedulePeerRebuild(){
+    if(!state.active||!navigator.onLine||state.peerRecoveryTimer)return;
+    const gen=state.generation;
+    const delay=Math.min(15000,1200*Math.pow(1.8,Math.min(6,state.peerRecoveryTries++)));
+    state.peerRecoveryTimer=setTimeout(()=>{
+      state.peerRecoveryTimer=null;
+      if(gen===state.generation&&state.active&&navigator.onLine)rebuildPeer();
+    },delay);
+    setNetStatus();
+  }
+  function rebuildPeer(){
+    if(!state.active||!navigator.onLine)return;
+    if(reconnectTimeout)clearTimeout(reconnectTimeout);reconnectTimeout=null;
+    if(state.hostRetry)clearTimeout(state.hostRetry);state.hostRetry=null;
+    if(joinTimeout)clearTimeout(joinTimeout);joinTimeout=null;
+    for(const id of Array.from(state.calls.keys()))clearCall(id,true);
+    state.remoteReady.clear();state.mediaStreams.clear();
+    if(state.hostConn){try{state.hostConn.close();}catch{}state.hostConn=null;}
+    for(const item of state.clients.values())try{item.conn.close();}catch{}
+    state.clients.clear();
+    const oldPeer=state.peer;state.peer=null;
+    if(oldPeer)try{oldPeer.destroy();}catch{}
+    state.id='';state.hostLastSeen=0;state.lastPingAt=0;
+    state.members=[];
+    renderMembers();setNetStatus();
+    try{
+      const peer=state.isHost ? new Peer(hostId(state.code),peerOptions()) : new Peer(undefined,peerOptions());
+      state.peer=peer;state.peerStartedAt=Date.now();state.signalTries=0;
+      attachPeerHandlers(peer,state.generation);
+    }catch{schedulePeerRebuild();}
+  }
+  function checkSessionHealth(){
+    if(!state.active)return;
+    if(!navigator.onLine){setNetStatus();return;}
+    if(!state.peer||state.peer.destroyed){schedulePeerRebuild();return;}
+    if(state.peer.disconnected){scheduleSignalReconnect(state.peer,state.generation);return;}
+    if(!state.id&&Date.now()-state.peerStartedAt>16000){schedulePeerRebuild();return;}
+    if(state.signalingDownSince){if(Date.now()-state.signalingDownSince>25000)schedulePeerRebuild();return;}
+    if(!state.isHost){
+      if(state.hostConn?.open){
+        if(Date.now()-state.hostLastSeen>23000){
+          const old=state.hostConn;state.hostConn=null;
+          try{old.close();}catch{}
+          note('La sala no responde. Recuperando conexión…',true,'room');scheduleHostRetry();
+        }else if(Date.now()-state.lastPingAt>=6500){
+          state.lastPingAt=Date.now();
+          try{state.hostConn.send({type:'ping'});}catch{scheduleHostRetry();}
+        }
+      }else scheduleHostRetry();
+    }
+    inspectCalls();ensureRoutes();
+  }
 
   function note(message, isError=false, target='home') {
     const el = $(target === 'home' ? 'homeNotice' : 'roomNotice');
@@ -304,6 +404,7 @@
       if(generation!==state.generation){state.stream.getTracks().forEach(t=>t.stop());return;}
       note('Conectando con el servicio gratuito...');
       state.peer = state.isHost ? new Peer(hostId(state.code),peerOptions()) : new Peer(undefined,peerOptions());
+      state.peerStartedAt=Date.now();
       attachPeerHandlers(state.peer,generation);
     }catch(err){
       const message=micErrorText(err);
@@ -313,44 +414,61 @@
     }
   }
   function attachPeerHandlers(peer,gen){
-    peer.on('open', (id)=>{
-      if(gen!==state.generation)return;
-      state.id=id;
-      state.signalTries=0;
+    const current=()=>gen===state.generation&&state.peer===peer;
+    peer.on('open',id=>{
+      if(!current())return;
+      state.id=id;state.signalTries=0;state.peerRecoveryTries=0;state.signalingDownSince=0;
       if(reconnectTimeout)clearTimeout(reconnectTimeout);reconnectTimeout=null;
-      if(!state.active){if(state.isHost){state.members=[{id,name:state.name}];enterRoom();}else connectToHost();}
-      else {if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();ensureRoutes();setNetStatus();}
+      if(state.peerRecoveryTimer)clearTimeout(state.peerRecoveryTimer);state.peerRecoveryTimer=null;
+      if(!state.active){
+        if(state.isHost){state.members=[{id,name:state.name}];enterRoom();}
+        else connectToHost();
+      }else{
+        if(state.isHost && state.members.length===0)state.members=[{id,name:state.name}];
+        if(!state.isHost && !state.hostConn?.open)connectToHost();
+        renderMembers();ensureRoutes();setNetStatus();
+      }
     });
-    peer.on('connection', (conn)=>{if(gen!==state.generation)return;if(state.isHost)hostAcceptData(conn);else conn.close();});
-    peer.on('call',(call)=>{
-      if(gen!==state.generation)return;
+    peer.on('connection',conn=>{if(!current()){conn.close();return;}if(state.isHost)hostAcceptData(conn);else conn.close();});
+    peer.on('call',call=>{
+      if(!current()){call.close();return;}
       if(state.isHost && !state.clients.has(call.peer)){call.close();return;}
       if(!state.isHost && !state.members.some(m=>m.id===call.peer)){
         let attempts=0;
-        const wait=setInterval(()=>{
+        const timer=setInterval(()=>{
           attempts++;
-          if(gen!==state.generation || state.members.some(m=>m.id===call.peer)){
-            clearInterval(wait);
-            if(gen===state.generation)acceptCall(call);else call.close();
-          }else if(attempts>14){clearInterval(wait);call.close();}
+          if(!current()){clearInterval(timer);call.close();return;}
+          if(state.members.some(m=>m.id===call.peer)){clearInterval(timer);acceptCall(call);}
+          else if(attempts>14){clearInterval(timer);call.close();}
         },200);
         return;
       }
       acceptCall(call);
     });
     peer.on('disconnected',()=>{
-      if(gen!==state.generation)return;
-      if(state.active)note('Se perdió la señalización. MotoLink intentará recuperar la conexión.',true,'room');
+      if(!current())return;
+      state.signalingDownSince=Date.now();
+      if(state.active)note('Se perdió la conexión. Recuperando automáticamente…',true,'room');
       scheduleSignalReconnect(peer,gen);setNetStatus();
     });
-    peer.on('error',(err)=>{
-      if(gen!==state.generation)return;
+    peer.on('close',()=>{if(current()&&state.active)schedulePeerRebuild();});
+    peer.on('error',err=>{
+      if(!current())return;
       const type=err?.type||'error';
-      if(type==='unavailable-id'){cleanup();note('Esa sala ya existe. Crea una nueva o ingresa el código de la sala existente.',true);return;}
-      if(type==='peer-unavailable' && !state.active){cleanup();note('No se encontró la sala. Revisa el código y confirma que el creador siga conectado.',true);return;}
-      if(type==='peer-unavailable' && state.active){note('Un participante no responde; se intentará reconectar.',true,'room');setNetStatus();return;}
-      if(['server-error','socket-error','network','browser-incompatible','invalid-id'].includes(type) && !state.active){cleanup();note('No se pudo conectar con la señalización gratuita: '+type,true);return;}
-      if(state.active){note('Problema de conexión ('+type+'). Comprueba Internet.',true,'room');if(peer.disconnected)scheduleSignalReconnect(peer,gen);setNetStatus();}
+      if(type==='peer-unavailable' && state.active){
+        note('Un compañero no responde. Esperando reconexión…',true,'room');return;
+      }
+      if(!state.active){
+        if(type==='unavailable-id'){cleanup();note('Esa sala ya existe. Crea una nueva o utiliza su código.',true);}
+        else if(type==='peer-unavailable'){cleanup();note('No se encontró la sala. Verifica el código.',true);}
+        else {cleanup();note('No se pudo iniciar la conexión: '+type,true);}
+        return;
+      }
+      // PeerJS puede destruir el Peer ante errores fatales: reconnect() ya no sirve.
+      note('Recuperando conexión principal ('+type+')…',true,'room');
+      if(peer.destroyed || ['unavailable-id','invalid-id','server-error','socket-error','socket-closed','network','webrtc'].includes(type))schedulePeerRebuild();
+      else if(peer.disconnected)scheduleSignalReconnect(peer,gen);
+      setNetStatus();
     });
   }
   function connectToHost(){
@@ -367,12 +485,15 @@
       if(!state.active){cleanup();note('La sala no respondió. Verifica el código o intenta otra vez.',true);}
       else {try{conn.close();}catch{}state.hostConn=null;scheduleHostRetry();}
     },13000);
-    conn.on('open',()=>{if(generation===state.generation && state.peer && !state.peer.destroyed)conn.send({type:'join',name:state.name});});
+    conn.on('open',()=>{if(generation===state.generation && state.hostConn===conn && state.peer && !state.peer.destroyed){state.hostLastSeen=Date.now();conn.send({type:'join',name:state.name});}});
     conn.on('data',(data)=>{
-      if(generation!==state.generation || !data||typeof data!=='object')return;
+      if(generation!==state.generation || state.hostConn!==conn || !data||typeof data!=='object')return;
+      state.hostLastSeen=Date.now();
+      if(data.type==='pong')return;
       if(data.type==='rejected'){cleanup();note(data.reason||'No puedes unirte a esta sala.',true);}
       else if(data.type==='welcome'){
         state.members=sanitizeRoster(data.members);
+        state.lastPingAt=0;
         if(joinTimeout)clearTimeout(joinTimeout);
         if(!state.active)enterRoom();
         ensureRoutes();setNetStatus();
@@ -402,7 +523,9 @@
     const generation=state.generation;
     let registered=false;
     conn.on('data',(data)=>{
-      if(generation!==state.generation||registered||data?.type!=='join')return;
+      if(generation!==state.generation||!data||typeof data!=='object')return;
+      if(registered && data.type==='ping'){if(conn.open)try{conn.send({type:'pong'});}catch{}return;}
+      if(registered||data.type!=='join')return;
       if(state.clients.size>=MAX-1){conn.send({type:'rejected',reason:'La sala está llena (máximo 5 personas).'});setTimeout(()=>conn.close(),600);return;}
       registered=true;
       const old=state.clients.get(conn.peer);
@@ -425,7 +548,7 @@
   function enterRoom(){
     state.active=true;state.connecting=false;
     if(state.routeTimer)clearInterval(state.routeTimer);
-    state.routeTimer=setInterval(()=>{ensureRoutes();if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();},RETRY_EVERY);
+    state.routeTimer=setInterval(checkSessionHealth,3000);
     setBusy(false);
     $('homeScreen').classList.add('hidden');$('roomScreen').classList.remove('hidden');
     $('displayCode').textContent=state.code;
@@ -449,40 +572,23 @@
   function registerCall(call){
     const id=call.peer;
     if(state.calls.has(id)){call.close();return;}
-    state.calls.set(id,call);
-    cancelCallTimer(id);
+    state.calls.set(id,call);cancelCallTimer(id);
     state.callTimers.set(id,setTimeout(()=>{
-      if(state.calls.get(id)===call && !state.remoteReady.has(id)){
-        note('Audio sin respuesta; reconectando…',true,'room');clearCall(id,true);renderMembers();ensureRoutes();
+      if(state.calls.get(id)===call&&!state.mediaStreams.has(id)){
+        note('Audio sin respuesta. Reintentando…',true,'room');failCall(id,call);
       }
-    },16000));
+    },17000));
     call.on('stream',stream=>{
       if(state.calls.get(id)!==call)return;
-      cancelCallTimer(id);mountAudio(id,stream);state.remoteReady.add(id);
-      renderMembers();setNetStatus();note('Audio conectado. La conversación está activa.',false,'room');
+      if(state.callTimers.has(id)){clearTimeout(state.callTimers.get(id));state.callTimers.delete(id);}
+      state.mediaStreams.add(id);
+      mountAudio(id,stream);
+      inspectCalls();
+      note('Audio recibido. Comprobando conexión…',false,'room');
     });
-    call.on('close',()=>{if(state.calls.get(id)===call){clearCall(id,false);renderMembers();setTimeout(ensureRoutes,1200);}});
-    call.on('error',()=>{if(state.calls.get(id)===call){clearCall(id,true);renderMembers();note('Audio interrumpido; reconectando…',true,'room');setTimeout(ensureRoutes,2000);}});
-    const pc=call.peerConnection;
-    if(pc){pc.addEventListener('iceconnectionstatechange',()=>{
-      if(state.calls.get(id)!==call)return;
-      const status=pc.iceConnectionState;
-      if(status==='failed'){
-        note('Conexión P2P fallida. Reintentando; algunas redes requieren TURN.',true,'room');
-        clearCall(id,true);renderMembers();setTimeout(ensureRoutes,1800);
-      }else if(status==='disconnected'){
-        if(state.disconnectedTimers.has(id))clearTimeout(state.disconnectedTimers.get(id));
-        state.disconnectedTimers.set(id,setTimeout(()=>{
-          if(state.calls.get(id)===call && pc.iceConnectionState==='disconnected'){
-            clearCall(id,true);renderMembers();setTimeout(ensureRoutes,1800);
-          }
-        },8000));
-      }else if(status==='connected'||status==='completed'){
-        if(state.disconnectedTimers.has(id))clearTimeout(state.disconnectedTimers.get(id));
-        state.disconnectedTimers.delete(id);
-      }
-      setNetStatus();
-    });}
+    call.on('close',()=>{if(state.calls.get(id)===call){failCall(id,call);}});
+    call.on('error',()=>{if(state.calls.get(id)===call){note('Audio interrumpido. Reintentando…',true,'room');failCall(id,call);}});
+    // PeerConnection puede crearse DESPUÉS de registerCall: inspectCalls lo vigila cada 3 s.
     renderMembers();
   }
   function mountAudio(id,stream){
@@ -501,14 +607,14 @@
   }
   function clearCall(id,shouldClose){
     cancelCallTimer(id);
-    const call=state.calls.get(id);state.calls.delete(id);state.remoteReady.delete(id);
+    const call=state.calls.get(id);state.calls.delete(id);state.remoteReady.delete(id);state.mediaStreams.delete(id);
     if(shouldClose && call)try{call.close();}catch{}
     const node=state.audioNodes.get(id);if(node){try{node.disconnect();}catch{}state.audioNodes.delete(id);}
     const audio=state.audio.get(id);if(audio){audio.pause();audio.srcObject=null;audio.remove();state.audio.delete(id);}
     setNetStatus();
   }
   function closeCall(id){clearCall(id,true);renderMembers();}
-  function pruneCalls(){const valid=new Set(state.members.map(m=>m.id));for(const id of state.calls.keys())if(!valid.has(id))closeCall(id);}
+  function pruneCalls(){const valid=new Set(state.members.map(m=>m.id));for(const id of state.calls.keys())if(!valid.has(id))closeCall(id);for(const id of state.callFailures.keys())if(!valid.has(id)){state.callFailures.delete(id);state.callRetryAfter.delete(id);}}
   function renderMembers(){
     if(!state.active)return;
     const list=$('membersList');list.replaceChildren();
@@ -542,9 +648,10 @@
     for(const m of state.members){
       if(m.id!==state.id&&!state.remoteReady.has(m.id))clearCall(m.id,true);
     }
-    if(state.peer?.disconnected)scheduleSignalReconnect(state.peer,state.generation);
+    if(state.peer?.destroyed||!state.peer)schedulePeerRebuild();
+    else if(state.peer.disconnected)scheduleSignalReconnect(state.peer,state.generation);
     if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();
-    ensureRoutes();activateSound();
+    checkSessionHealth();ensureRoutes();activateSound();
     note('Reintento de conexión iniciado. Puede tardar unos segundos.',false,'room');
   }
   async function activateSound(){
@@ -571,6 +678,7 @@
     if(joinTimeout)clearTimeout(joinTimeout);joinTimeout=null;
     if(reconnectTimeout)clearTimeout(reconnectTimeout);reconnectTimeout=null;
     if(state.hostRetry)clearTimeout(state.hostRetry);state.hostRetry=null;
+    if(state.peerRecoveryTimer)clearTimeout(state.peerRecoveryTimer);state.peerRecoveryTimer=null;
     if(state.routeTimer)clearInterval(state.routeTimer);state.routeTimer=null;
     for(const t of state.callTimers.values())clearTimeout(t);state.callTimers.clear();
     for(const t of state.disconnectedTimers.values())clearTimeout(t);state.disconnectedTimers.clear();
@@ -580,9 +688,12 @@
     if(state.peer)try{state.peer.destroy();}catch{}
     if(state.stream)for(const t of state.stream.getTracks())t.stop();
     if(state.audioContext)try{state.audioContext.close();}catch{}
-    state.audioContext=null;state.volumeGain=null;state.compressor=null;state.audioNodes.clear();state.signalTries=0;
-    state.peer=null;state.stream=null;state.id='';state.code='';state.isHost=false;state.active=false;state.muted=false;state.members=[];state.hostConn=null;state.calls.clear();state.audio.clear();state.remoteReady.clear();state.clients.clear();
-    $('roomScreen').classList.add('hidden');$('homeScreen').classList.remove('hidden');$('soundButton').classList.add('hidden');$('pillText').textContent='Prototipo v0.3';
+    state.audioContext=null;state.volumeGain=null;state.compressor=null;state.audioNodes.clear();
+    state.signalTries=0;state.peerRecoveryTries=0;state.peerStartedAt=0;state.hostLastSeen=0;state.lastPingAt=0;state.signalingDownSince=0;
+    state.peer=null;state.stream=null;state.id='';state.code='';state.isHost=false;state.active=false;state.muted=false;
+    state.members=[];state.hostConn=null;state.calls.clear();state.audio.clear();state.remoteReady.clear();state.mediaStreams.clear();state.clients.clear();
+    state.iceLostAt.clear();state.callFailures.clear();state.callRetryAfter.clear();
+    $('roomScreen').classList.add('hidden');$('homeScreen').classList.remove('hidden');$('soundButton').classList.add('hidden');$('pillText').textContent='Prototipo v0.4';
     setBusy(false);
   }
 
@@ -597,10 +708,10 @@
   $('retryButton').addEventListener('click',reattemptAudio);
   $('soundButton').addEventListener('click',activateSound);
   $('volumeSlider').addEventListener('input',e=>setVolume(e.target.value));
-  window.addEventListener('online',()=>{if(state.active){if(state.peer?.disconnected)scheduleSignalReconnect(state.peer,state.generation);if(!state.isHost&&!state.hostConn?.open)scheduleHostRetry();ensureRoutes();}});
+  window.addEventListener('online',()=>{if(state.active){if(state.signalingDownSince)state.signalingDownSince=Date.now();checkSessionHealth();setNetStatus();}});
   window.addEventListener('offline',()=>{if(state.active){note('Sin Internet. Al volver la red, MotoLink intentará reconectar.',true,'room');setNetStatus();}});
   window.addEventListener('pagehide',()=>{if(state.active||state.connecting)cleanup();});
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.active){renderMembers();}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.active){checkSessionHealth();prepareAudio();renderMembers();}});
   try{const old=localStorage.getItem('motolink-name');if(old)$('nameInput').value=normalizeName(old);}catch{}
   try{setVolume(localStorage.getItem('motolink-volume')||170);}catch{setVolume(170);}
   const queryRoom=new URLSearchParams(location.search).get('room');
